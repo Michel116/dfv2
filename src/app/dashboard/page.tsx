@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, Suspense, useCallback } from "react";
 import type { Inspector, DataEntry, DeviceId } from "@/types";
 import { DEVICE_OPTIONS, DEVICE_CONFIGS } from "@/config/devices";
 import { Navbar } from "@/components/layout/Navbar";
@@ -81,6 +81,8 @@ function DashboardClientPage() {
     if (deviceFromQuery && Object.keys(DEVICE_CONFIGS).includes(deviceFromQuery)) {
       if (selectedDeviceId !== deviceFromQuery) {
         setSelectedDeviceId(deviceFromQuery);
+        // Clear the query parameter after applying it
+        // Use a timeout to ensure state update has propagated before router.replace
         setTimeout(() => router.replace('/dashboard', { scroll: false }), 0);
       }
     }
@@ -118,13 +120,16 @@ function DashboardClientPage() {
   }, [selectedDeviceId, isInitialDataLoaded]);
 
 
-  const handleSaveEntry = (entry: DataEntry) => {
-    setIsLoading(true);
-    setTimeout(() => {
-      setDataEntries(prev => [entry, ...prev]);
-      setIsLoading(false);
-    }, 500);
-  };
+  const handleSaveEntry = useCallback((entry: DataEntry): Promise<void> => {
+    return new Promise((resolve) => {
+      setIsLoading(true);
+      setTimeout(() => {
+        setDataEntries(prev => [entry, ...prev]);
+        setIsLoading(false);
+        resolve();
+      }, 500);
+    });
+  }, []);
 
   const handleDeleteEntry = (id: string) => {
     const entryToDelete = dataEntries.find(entry => entry.id === id);
@@ -332,5 +337,3 @@ export default function DashboardPage() {
     </Suspense>
   );
 }
-
-    
