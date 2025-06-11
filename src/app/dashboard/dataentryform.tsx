@@ -24,7 +24,7 @@ interface DataEntryFormProps {
 }
 
 const PREFILLED_VERIFICATION_POINT = 37.0;
-const PREFILLED_REFERENCE_TEMP = 37.0; 
+const PREFILLED_REFERENCE_TEMP = 37.0;
 const PREFILLED_TEMP_CORRECTION = -3.7;
 const TEMP_LOWER_LIMIT_37 = 36.7;
 const TEMP_UPPER_LIMIT_37 = 37.3;
@@ -32,11 +32,11 @@ const TEMP_UPPER_LIMIT_37 = 37.3;
 
 export function DataEntryForm({ selectedDevice, selectedInspector, onSaveEntry, isLoading: externalIsLoading }: DataEntryFormProps) {
   const [serialNumber, setSerialNumber] = useState("");
-  const [formValues, setFormValues] = useState<Record<string, string>>({}); 
+  const [formValues, setFormValues] = useState<Record<string, string>>({});
   const [isQrDialogOpen, setIsQrDialogOpen] = useState(false);
   const [qrInput, setQrInput] = useState("");
-  
-  const [currentStep, setCurrentStep] = useState(0); 
+
+  const [currentStep, setCurrentStep] = useState(0);
   const [readings, setReadings] = useState<string[]>(["", "", ""]);
   const [currentReadingInput, setCurrentReadingInput] = useState("");
   const [isAutoSaving, setIsAutoSaving] = useState(false);
@@ -49,41 +49,52 @@ export function DataEntryForm({ selectedDevice, selectedInspector, onSaveEntry, 
 
   const resetThermometerForm = useCallback(() => {
     setSerialNumber("");
-    setReadings(["", "", ""]);
     setCurrentReadingInput("");
     setCurrentStep(0);
+    // readings are reset in the main useEffect or when currentStep becomes 0
+    // Re-initialize formValues specifically for thermometer's prefilled fields if any exist
     if (selectedDevice === 'thermometer' && DEVICE_CONFIGS.thermometer) {
-      const thermometerFields = DEVICE_CONFIGS.thermometer.fields;
-      const initialFormValues: Record<string, string> = {};
-      thermometerFields.forEach(field => {
-        if (field.prefilledValue !== undefined && field.readOnly) {
-          initialFormValues[field.id] = field.prefilledValue;
+      const currentDeviceConfig = DEVICE_CONFIGS.thermometer;
+      const newInitialFormValues: Record<string, string> = {};
+      currentDeviceConfig.fields.forEach(field => {
+        if (field.prefilledValue !== undefined) {
+          newInitialFormValues[field.id] = field.prefilledValue;
+        } else {
+          newInitialFormValues[field.id] = "";
         }
       });
-      setFormValues(initialFormValues);
+      setFormValues(newInitialFormValues);
     }
   }, [selectedDevice]);
 
   useEffect(() => {
+    // General reset for states not directly tied to formValues fields
     setSerialNumber("");
-    setFormValues({});
     setCurrentStep(0);
     setReadings(["", "", ""]);
     setCurrentReadingInput("");
     setIsAutoSaving(false);
-
-    if (selectedDevice === 'thermometer' && DEVICE_CONFIGS.thermometer) {
-      const thermometerFields = DEVICE_CONFIGS.thermometer.fields;
-      const initialFormValues: Record<string, string> = {};
-      thermometerFields.forEach(field => {
-        if (field.prefilledValue !== undefined && field.readOnly) {
-          initialFormValues[field.id] = field.prefilledValue;
+  
+    if (selectedDevice && DEVICE_CONFIGS[selectedDevice]) {
+      const currentDeviceConfig = DEVICE_CONFIGS[selectedDevice];
+      const newInitialFormValues: Record<string, string> = {};
+  
+      currentDeviceConfig.fields.forEach(field => {
+        // Prioritize prefilledValue if it exists for the field
+        if (field.prefilledValue !== undefined) {
+          newInitialFormValues[field.id] = field.prefilledValue;
+        } else {
+          // Otherwise, ensure the field is initialized with an empty string
+          newInitialFormValues[field.id] = "";
         }
       });
-      setFormValues(initialFormValues);
+      setFormValues(newInitialFormValues);
+    } else {
+      // No device selected or invalid device, reset formValues to an empty object
+      setFormValues({});
     }
-
   }, [selectedDevice, selectedInspector]);
+
 
   useEffect(() => {
     if (isThermometer && currentStep >= 1 && currentStep <= 3) {
@@ -94,8 +105,14 @@ export function DataEntryForm({ selectedDevice, selectedInspector, onSaveEntry, 
 
   const handleReadingInputChange = (newValue: string) => {
     let processedValue = newValue;
-    processedValue = processedValue.replace(/[^0-9.]/g, ''); // Allow only numbers and one dot
-    
+    // Allow only numbers and one dot. Disallow multiple dots.
+    if (processedValue.split('.').length > 2) {
+      // If more than one dot, keep only the part before the second dot.
+      processedValue = processedValue.substring(0, processedValue.lastIndexOf('.'));
+    }
+    processedValue = processedValue.replace(/[^0-9.]/g, '');
+
+
     const parts = processedValue.split('.');
     let integerPart = parts[0];
     let decimalPart = parts.length > 1 ? parts[1] : undefined;
@@ -106,23 +123,20 @@ export function DataEntryForm({ selectedDevice, selectedInspector, onSaveEntry, 
     processedValue = integerPart;
     if (decimalPart !== undefined) {
       processedValue += '.' + decimalPart;
-    } else if (parts.length > 1) { // If there was a dot but no decimal part (e.g., "36.")
+    } else if (parts.length > 1 && newValue.endsWith('.')) { // Handles typing "XX."
       processedValue += '.';
     }
 
-
     // Auto-dot logic refinements
-    if (newValue.length > currentReadingInput.length) { // If adding characters
-      if (integerPart.length === 2 && decimalPart === undefined && !processedValue.includes('.')) {
-        // If two digits entered and no dot yet, add dot if the new char is not a dot
-        if (newValue.charAt(newValue.length -1) !== '.') {
-            processedValue = integerPart + '.';
+    // Check if adding characters and conditions for auto-dot are met
+    if (newValue.length > currentReadingInput.length) { // User is typing, not deleting
+        if (integerPart.length === 2 && decimalPart === undefined && !processedValue.includes('.') && newValue.charAt(newValue.length-1) !== '.') {
+          // If two digits entered, no dot yet, and new char is not a dot itself
+          processedValue = integerPart + '.';
+        } else if (integerPart.length === 3 && decimalPart === undefined && !processedValue.includes('.')) {
+          // If three digits entered like "365", convert to "36.5"
+          processedValue = integerPart.slice(0,2) + '.' + integerPart.slice(2);
         }
-      }
-      if (integerPart.length === 2 && decimalPart === undefined && newValue.endsWith('.') && !processedValue.endsWith('.')) {
-        // If user explicitly types a dot after two digits
-        processedValue = integerPart + '.';
-      }
     }
     
     setCurrentReadingInput(processedValue);
@@ -149,7 +163,7 @@ export function DataEntryForm({ selectedDevice, selectedInspector, onSaveEntry, 
       toast({ title: "Ошибка", description: "Требуется серийный номер.", variant: "destructive" });
       return;
     }
-    setCurrentStep(1); 
+    setCurrentStep(1);
   };
 
   const handleAddReading = useCallback(() => {
@@ -158,34 +172,34 @@ export function DataEntryForm({ selectedDevice, selectedInspector, onSaveEntry, 
         return;
     }
     const newReadings = [...readings];
-    newReadings[currentStep - 1] = currentReadingInput; 
+    newReadings[currentStep - 1] = currentReadingInput;
     setReadings(newReadings);
-    setCurrentReadingInput(""); 
+    setCurrentReadingInput("");
 
     if (currentStep < 3) {
-        setCurrentStep(currentStep + 1); 
+        setCurrentStep(currentStep + 1);
     } else {
-        setCurrentStep(4); 
+        setCurrentStep(4);
     }
   }, [currentStep, currentReadingInput, readings, toast]);
 
   const handlePrevStep = () => {
     if (currentStep > 0) {
       setCurrentStep(prev => prev - 1);
-      if (currentStep >=1 && currentStep <=3 && readings[currentStep-2]) { 
-         setCurrentReadingInput(readings[currentStep-2]) 
-      } else if (currentStep === 1){ 
-         setCurrentReadingInput(""); 
-      } else if (currentStep > 1 && currentStep <=3) { 
-         setCurrentReadingInput(readings[currentStep-2]); 
+      if (currentStep >=1 && currentStep <=3 && readings[currentStep-2]) {
+         setCurrentReadingInput(readings[currentStep-2])
+      } else if (currentStep === 1){
+         setCurrentReadingInput("");
+      } else if (currentStep > 1 && currentStep <=3) {
+         setCurrentReadingInput(readings[currentStep-2]);
       } else {
-        setCurrentReadingInput(""); 
+        setCurrentReadingInput("");
       }
     }
   };
-  
+
   const thermoCalculations = useMemo(() => {
-    if (!isThermometer) return null; 
+    if (!isThermometer) return null;
     if (currentStep !== 4 && !(currentStep === 3 && readings.every(r => r.trim() !== "" && !isNaN(parseFloat(r))) )) return null;
 
 
@@ -196,14 +210,14 @@ export function DataEntryForm({ selectedDevice, selectedInspector, onSaveEntry, 
     if (isNaN(r1) || isNaN(r2) || isNaN(r3)) {
       return { actual_temp_1: NaN, actual_temp_2: NaN, actual_temp_3: NaN, average_actual_temp: NaN, result_status: "Данные неполные или некорректны" };
     }
-    
+
     const actual_temp_1 = r1 + PREFILLED_TEMP_CORRECTION;
     const actual_temp_2 = r2 + PREFILLED_TEMP_CORRECTION;
     const actual_temp_3 = r3 + PREFILLED_TEMP_CORRECTION;
     const average_actual_temp = (actual_temp_1 + actual_temp_2 + actual_temp_3) / 3;
-    
+
     const result_status = (average_actual_temp >= TEMP_LOWER_LIMIT_37 && average_actual_temp <= TEMP_UPPER_LIMIT_37) ? "Годен" : "Брак";
-    
+
     return {
       actual_temp_1, actual_temp_2, actual_temp_3, average_actual_temp,
       lower_limit: TEMP_LOWER_LIMIT_37, upper_limit: TEMP_UPPER_LIMIT_37, result_status,
@@ -234,7 +248,7 @@ export function DataEntryForm({ selectedDevice, selectedInspector, onSaveEntry, 
         }
         measuredValuesToSave = {
             verification_point: PREFILLED_VERIFICATION_POINT,
-            reference_temp_kt7: PREFILLED_REFERENCE_TEMP, 
+            reference_temp_kt7: PREFILLED_REFERENCE_TEMP,
             temp_correction: PREFILLED_TEMP_CORRECTION,
             complex_reading_1: parseFloat(readings[0]),
             complex_reading_2: parseFloat(readings[1]),
@@ -242,7 +256,7 @@ export function DataEntryForm({ selectedDevice, selectedInspector, onSaveEntry, 
         };
     } else {
         for (const field of deviceConfig.fields) {
-            const value = formValues[field.id];
+            const value = formValues[field.id]; // formValues[field.id] should now always be a string
             if (field.required && (value === undefined || String(value).trim() === "")) {
                 toast({ title: "Ошибка валидации", description: `Поле "${field.label}" обязательно для заполнения.`, variant: "destructive" });
                 setIsAutoSaving(false);
@@ -270,14 +284,23 @@ export function DataEntryForm({ selectedDevice, selectedInspector, onSaveEntry, 
     };
 
     await onSaveEntry(newEntry);
-    
+
     toast({ title: "Успешно", description: "Запись данных сохранена." });
-    
+
     if(isThermometer) {
       resetThermometerForm();
     } else {
       setSerialNumber("");
-      setFormValues({});
+      // Re-initialize formValues for the current non-thermometer device to empty strings or prefilled values
+      if (deviceConfig) {
+        const newInitialFormValues: Record<string, string> = {};
+        deviceConfig.fields.forEach(field => {
+          newInitialFormValues[field.id] = field.prefilledValue !== undefined ? field.prefilledValue : "";
+        });
+        setFormValues(newInitialFormValues);
+      } else {
+        setFormValues({});
+      }
     }
     setIsAutoSaving(false);
 
@@ -372,7 +395,7 @@ export function DataEntryForm({ selectedDevice, selectedInspector, onSaveEntry, 
       }
     }
   }
-  
+
   const isCurrentReadingValid = currentReadingInput.trim() !== "" && !isNaN(parseFloat(currentReadingInput));
   const isLoading = externalIsLoading || isAutoSaving;
 
@@ -397,7 +420,7 @@ export function DataEntryForm({ selectedDevice, selectedInspector, onSaveEntry, 
                   className="font-code flex-grow"
                   required
                   disabled={isLoading}
-                  autoFocus={currentStep === 0}
+                  autoFocus={currentStep === 0 && !isThermometer} // Autofocus SN only if not thermometer or if thermometer at step 0
                 />
                 <Dialog open={isQrDialogOpen} onOpenChange={setIsQrDialogOpen}>
                   <DialogTrigger asChild>
@@ -452,8 +475,8 @@ export function DataEntryForm({ selectedDevice, selectedInspector, onSaveEntry, 
               <Input
                 ref={readingInputRef}
                 id="currentReading"
-                type="text" 
-                inputMode="decimal" 
+                type="text"
+                inputMode="decimal"
                 value={currentReadingInput}
                 onChange={(e) => handleReadingInputChange(e.target.value)}
                 onKeyDown={handleReadingKeyDown}
@@ -469,8 +492,8 @@ export function DataEntryForm({ selectedDevice, selectedInspector, onSaveEntry, 
             <Card className="bg-muted/30">
               <CardHeader>
                 <CardTitle className="text-lg flex items-center">
-                  {thermoCalculations.result_status === "Годен" ? 
-                    <CheckCircle className="h-6 w-6 mr-2 text-green-600" /> : 
+                  {thermoCalculations.result_status === "Годен" ?
+                    <CheckCircle className="h-6 w-6 mr-2 text-green-600" /> :
                     (thermoCalculations.result_status === "Брак" ? <XCircle className="h-6 w-6 mr-2 text-red-600" /> : <Loader2 className="h-6 w-6 mr-2 animate-spin" />) }
                   Вердикт: <span className={cn(thermoCalculations.result_status === "Годен" ? "text-green-600" : thermoCalculations.result_status === "Брак" ? "text-red-600" : "", "font-semibold ml-1")}>{isAutoSaving ? "Сохранение..." : thermoCalculations.result_status}</span>
                 </CardTitle>
@@ -489,7 +512,7 @@ export function DataEntryForm({ selectedDevice, selectedInspector, onSaveEntry, 
               </CardContent>
             </Card>
           )}
-          
+
           {!isThermometer && deviceConfig.fields.map((field: DeviceField) => (
               <div key={field.id} className="space-y-2">
                 <Label htmlFor={field.id} className="text-base font-medium">
@@ -497,18 +520,19 @@ export function DataEntryForm({ selectedDevice, selectedInspector, onSaveEntry, 
                 </Label>
                 <Input
                   id={field.id}
-                  type={field.type} 
+                  type={field.type}
                   step={field.type === 'number' ? field.step : undefined}
-                  value={formValues[field.id] || ""}
-                  onChange={(e) => handleGenericInputChange(field.id, e.target.value)} 
+                  value={formValues[field.id] || ""} // Kept `|| ""` for maximum safety, though formValues[field.id] should be a string.
+                  onChange={(e) => handleGenericInputChange(field.id, e.target.value)}
                   placeholder={field.placeholder}
                   required={field.required}
                   disabled={field.readOnly || isLoading}
                   className={cn(field.readOnly && "bg-muted/50 border-muted/30 cursor-not-allowed")}
+                  autoFocus={!isThermometer && deviceConfig.fields[0].id === field.id} // Autofocus first field for non-thermometers
                 />
               </div>
             ))}
-          
+
           <div>
             <Label className="text-base font-medium">Поверитель</Label>
             <Input value={selectedInspector?.name || "Поверитель не выбран"} readOnly disabled className="mt-2 bg-muted/50" />
@@ -517,12 +541,12 @@ export function DataEntryForm({ selectedDevice, selectedInspector, onSaveEntry, 
           <div className="flex flex-col space-y-2 pt-2">
             {isThermometer ? (
               <>
-                {currentStep === 0 && ( 
+                {currentStep === 0 && (
                   <Button type="button" onClick={handleNextSNStep} className="w-full" disabled={isLoading || !serialNumber.trim()}>
                     Далее <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
                 )}
-                {currentStep >= 1 && currentStep <= 3 && ( 
+                {currentStep >= 1 && currentStep <= 3 && (
                   <div className="flex flex-col space-y-2">
                     <Button type="button" onClick={handleAddReading} className="w-full" disabled={isLoading || !isCurrentReadingValid}>
                         Добавить измерение ({currentStep}/3) <ArrowRight className="ml-2 h-4 w-4" />
@@ -532,7 +556,7 @@ export function DataEntryForm({ selectedDevice, selectedInspector, onSaveEntry, 
                     </Button>
                   </div>
                 )}
-                {currentStep === 4 && ( 
+                {currentStep === 4 && (
                   <div className="flex gap-2">
                      {isAutoSaving ? (
                        <Button type="button" className="flex-1" disabled>
@@ -546,7 +570,7 @@ export function DataEntryForm({ selectedDevice, selectedInspector, onSaveEntry, 
                   </div>
                 )}
               </>
-            ) : ( 
+            ) : (
               <Button type="submit" className="w-full bg-accent hover:bg-accent/90 text-accent-foreground" disabled={isLoading || !selectedInspector || !serialNumber.trim() || !deviceConfig.fields.every(f => f.required ? (formValues[f.id] && String(formValues[f.id]).trim() !== "") : true)}>
                 {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                 {isLoading ? "Сохранение..." : "Сохранить запись"}
@@ -559,3 +583,5 @@ export function DataEntryForm({ selectedDevice, selectedInspector, onSaveEntry, 
   );
 }
 
+
+    
