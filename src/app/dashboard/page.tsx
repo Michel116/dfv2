@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import type { Inspector, DataEntry, DeviceId } from "@/types";
 import { DEVICE_OPTIONS, DEVICE_CONFIGS } from "@/config/devices";
 import { Navbar } from "@/components/layout/Navbar";
@@ -14,21 +14,21 @@ import { useToast } from "@/hooks/use-toast";
 import { useSearchParams, useRouter } from 'next/navigation';
 import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 
-export default function DashboardPage() {
+function DashboardClientPage() {
   const [inspectors, setInspectors] = useState<Inspector[]>([]);
   const [selectedInspectorId, setSelectedInspectorId] = useState<string | undefined>();
   const [dataEntries, setDataEntries] = useState<DataEntry[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<DeviceId | undefined>();
   const [isLoading, setIsLoading] = useState(false);
-  const [isInitialDataLoaded, setIsInitialDataLoaded] = useState(false); // New state
+  const [isInitialDataLoaded, setIsInitialDataLoaded] = useState(false);
   const { toast } = useToast();
   const searchParams = useSearchParams();
   const router = useRouter();
 
   const selectedInspector = inspectors.find(i => i.id === selectedInspectorId);
 
-  // Load data from localStorage on mount
   useEffect(() => {
     let loadedInspectors: Inspector[] = [];
     const storedInspectors = localStorage.getItem("datafill-inspectors");
@@ -47,12 +47,10 @@ export default function DashboardPage() {
       if (loadedInspectors.find(i => i.id === storedSelectedInspectorId)) {
         setSelectedInspectorId(storedSelectedInspectorId);
       } else {
-        // Stored ID is stale or invalid
         localStorage.removeItem("datafill-selectedInspectorId");
         setSelectedInspectorId(undefined); 
       }
     } else {
-      // No stored selected inspector ID
       setSelectedInspectorId(undefined); 
     }
 
@@ -75,48 +73,42 @@ export default function DashboardPage() {
           setSelectedDeviceId(storedSelectedDevice);
       }
     }
-    setIsInitialDataLoaded(true); // Signal that initial load is complete
+    setIsInitialDataLoaded(true);
   }, []); 
 
-  // Handle device selection from query parameter if it changes after mount
   useEffect(() => {
     const deviceFromQuery = searchParams.get('device') as DeviceId | null;
     if (deviceFromQuery && Object.keys(DEVICE_CONFIGS).includes(deviceFromQuery)) {
       if (selectedDeviceId !== deviceFromQuery) {
         setSelectedDeviceId(deviceFromQuery);
-        // Remove the query param from URL after processing to keep URL clean
-        // Use a timeout to ensure state update has a chance to propagate before router.replace
         setTimeout(() => router.replace('/dashboard', { scroll: false }), 0);
       }
     }
   }, [searchParams, selectedDeviceId, router]);
 
 
-  // Save data to localStorage whenever it changes
   useEffect(() => {
-    if (!isInitialDataLoaded) return; // Guard against premature save
+    if (!isInitialDataLoaded) return;
     localStorage.setItem("datafill-inspectors", JSON.stringify(inspectors));
   }, [inspectors, isInitialDataLoaded]);
 
   useEffect(() => {
-    if (!isInitialDataLoaded) return; // Guard against premature save
+    if (!isInitialDataLoaded) return;
     localStorage.setItem("datafill-entries", JSON.stringify(dataEntries));
   }, [dataEntries, isInitialDataLoaded]);
 
   useEffect(() => {
-    if (!isInitialDataLoaded) return; // Guard against premature save
+    if (!isInitialDataLoaded) return;
 
     if (selectedInspectorId) {
       localStorage.setItem("datafill-selectedInspectorId", selectedInspectorId);
     } else {
-      // If selectedInspectorId is undefined (after initial load), remove it.
-      // This handles cases like deleting the selected inspector or no valid initial selection.
       localStorage.removeItem("datafill-selectedInspectorId");
     }
-  }, [selectedInspectorId, inspectors, isInitialDataLoaded]); // `inspectors` kept in dep array for cases where selectedId becomes invalid due to inspector list change
+  }, [selectedInspectorId, inspectors, isInitialDataLoaded]);
 
   useEffect(() => {
-    if (!isInitialDataLoaded) return; // Guard against premature save
+    if (!isInitialDataLoaded) return;
 
     if (selectedDeviceId) {
         localStorage.setItem("datafill-selectedDevice", selectedDeviceId);
@@ -128,9 +120,8 @@ export default function DashboardPage() {
 
   const handleSaveEntry = (entry: DataEntry) => {
     setIsLoading(true);
-    // Simulate API call
     setTimeout(() => {
-      setDataEntries(prev => [entry, ...prev]); // Add new entries to the beginning
+      setDataEntries(prev => [entry, ...prev]);
       setIsLoading(false);
     }, 500);
   };
@@ -147,6 +138,56 @@ export default function DashboardPage() {
     setDataEntries([]);
     toast({ title: "Все записи очищены", description: "Все собранные данные были удалены."});
   };
+
+  if (!isInitialDataLoaded) {
+    return (
+      <>
+        <Navbar />
+        <main className="container mx-auto px-4 py-8 flex-grow">
+          <Skeleton className="h-8 w-1/3 mb-8" />
+          <div className="grid lg:grid-cols-3 gap-8 items-start">
+            <Card className="lg:col-span-1 shadow-lg">
+              <CardHeader>
+                <Skeleton className="h-6 w-1/2 mb-2" />
+                <Skeleton className="h-4 w-3/4" />
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div>
+                  <Skeleton className="h-5 w-1/3 mb-3" />
+                  <div className="space-y-4">
+                    <Skeleton className="h-20 w-full" />
+                    <Skeleton className="h-20 w-full" />
+                  </div>
+                </div>
+                <Separator />
+                <div>
+                  <Skeleton className="h-5 w-1/3 mb-3" />
+                  <Skeleton className="h-24 w-full" />
+                </div>
+              </CardContent>
+            </Card>
+            <div className="lg:col-span-2">
+              <Card className="shadow-lg">
+                <CardHeader>
+                  <Skeleton className="h-6 w-3/4 mb-2" />
+                  <Skeleton className="h-4 w-full" />
+                </CardHeader>
+                <CardContent>
+                  <Skeleton className="h-10 w-full" />
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+          <div className="mt-12">
+            <Skeleton className="h-40 w-full" />
+          </div>
+        </main>
+        <footer className="text-center p-6 border-t mt-auto">
+          <Skeleton className="h-4 w-1/4 mx-auto" />
+        </footer>
+      </>
+    );
+  }
 
   return (
     <>
@@ -176,7 +217,7 @@ export default function DashboardPage() {
                       className={cn(
                         "cursor-pointer hover:shadow-md transition-all duration-200 ease-in-out relative",
                         isSelected ? "border-primary ring-2 ring-primary shadow-md scale-105" : "border-border hover:border-primary/50",
-                        isAlcotest && "opacity-70 hover:opacity-80" // Slightly dim if alcotest
+                        isAlcotest && "opacity-70 hover:opacity-80"
                       )}
                       onClick={() => setSelectedDeviceId(deviceConfig.id)}
                     >
@@ -238,3 +279,58 @@ export default function DashboardPage() {
   );
 }
 
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={
+      <>
+        <Navbar />
+        <main className="container mx-auto px-4 py-8 flex-grow">
+          <Skeleton className="h-8 w-1/3 mb-8" />
+          <div className="grid lg:grid-cols-3 gap-8 items-start">
+            <Card className="lg:col-span-1 shadow-lg">
+              <CardHeader>
+                <Skeleton className="h-6 w-1/2 mb-2" />
+                <Skeleton className="h-4 w-3/4" />
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div>
+                  <Skeleton className="h-5 w-1/3 mb-3" />
+                  <div className="space-y-4">
+                    <Skeleton className="h-20 w-full" />
+                    <Skeleton className="h-20 w-full" />
+                  </div>
+                </div>
+                <Separator />
+                <div>
+                  <Skeleton className="h-5 w-1/3 mb-3" />
+                  <Skeleton className="h-24 w-full" />
+                </div>
+              </CardContent>
+            </Card>
+            <div className="lg:col-span-2">
+              <Card className="shadow-lg">
+                <CardHeader>
+                  <Skeleton className="h-6 w-3/4 mb-2" />
+                  <Skeleton className="h-4 w-full" />
+                </CardHeader>
+                <CardContent>
+                  <Skeleton className="h-10 w-full" />
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+          <div className="mt-12">
+            <Skeleton className="h-40 w-full" />
+          </div>
+        </main>
+        <footer className="text-center p-6 border-t mt-auto">
+          <Skeleton className="h-4 w-1/4 mx-auto" />
+        </footer>
+      </>
+    }>
+      <DashboardClientPage />
+    </Suspense>
+  );
+}
+
+    
